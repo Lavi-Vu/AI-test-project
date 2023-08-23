@@ -3,8 +3,17 @@
 #include <chrono>
 #include <string>
 #include <algorithm>
-using namespace std::chrono;
 
+#include <set>
+#include <iterator>
+#include <curl/curl.h>
+using namespace std::chrono;
+typedef struct TrackingBox
+{
+    cv::Rect box;
+    std::string personName;
+    int frame;
+} TrackingBox;
 std::string extractNameFromFile(const std::string &filePath)
 {
     size_t lastSlashPos = filePath.find_last_of('/');
@@ -13,39 +22,38 @@ std::string extractNameFromFile(const std::string &filePath)
     return directoryName;
 }
 
-float calc_iou(cv::Rect bbox1, cv::Rect bbox2)
+float calculateIoU(cv::Rect bbox1, cv::Rect bbox2)
 {
-    // bbox x, y is top-left point
+    // Calculate bottom-right coordinates
+    float x2_bbox1 = bbox1.x + bbox1.width;
+    float y2_bbox1 = bbox1.y + bbox1.height;
+    float x2_bbox2 = bbox2.x + bbox2.width;
+    float y2_bbox2 = bbox2.y + bbox2.height;
 
-    // cacl x2 y2 ( bottom right point )
-    float x2_box1 = bbox1.x + bbox1.width;
-    float y2_box1 = bbox1.y + bbox1.height;
+    // Calculate intersection dimensions
+    float intersection_width = std::max(0.0f, std::min(x2_bbox1, x2_bbox2) - std::max(bbox1.x, bbox2.x));
+    float intersection_height = std::max(0.0f, std::min(y2_bbox1, y2_bbox2) - std::max(bbox1.y, bbox2.y));
 
-    // cacl x2 y2 ( bottom right point )
-    float x2_box2 = bbox2.x + bbox2.width;
-    float y2_box2 = bbox2.y + bbox2.height;
+    // Calculate intersection area
+    float intersection_area = intersection_width * intersection_height;
 
-    // cacl intersection  w h
-    float intersection_width = std::min(x2_box1, x2_box2) - std::max(bbox1.x, bbox2.x);
-    float intersection_height = std::min(y2_box1, y2_box2) - std::max(bbox1.y, bbox2.y);
+    // Calculate individual bounding box areas
+    float area_bbox1 = bbox1.width * bbox1.height;
+    float area_bbox2 = bbox2.width * bbox2.height;
 
-    float iou;
+    // Calculate union area
+    float union_area = area_bbox1 + area_bbox2 - intersection_area;
 
-    if (intersection_height > 0 && intersection_width > 0)
+    // Calculate IoU
+    if (union_area > 0)
     {
-        float intersection_area = intersection_width * intersection_height;
-
-        float area_box1 = bbox1.width * bbox1.height;
-        float area_box2 = bbox2.width * bbox2.height;
-
-        float union_area = area_box1 + area_box2 - intersection_area;
-
-        iou = intersection_area / union_area;
-
+        float iou = intersection_area / union_area;
         return iou;
     }
     else
+    {
         return 0.0f;
+    }
 }
 
 void draw(cv::Mat &frame, cv::Rect bbox, std::string personName)
@@ -74,7 +82,7 @@ std::string recognitionOnePerson(cv::Mat &frame,
                                  const std::unordered_map<std::string, lite::types::FaceContent> &faceContents,
                                  cv::Rect detectedBox)
 {
-    std::cout << "cai gi" << std::endl;
+
     cv::Rect Rect(detectedBox.x, detectedBox.y, detectedBox.width, detectedBox.height);
     cv::Mat croppedImage = frame(Rect);
     lite::types::FaceContent face_to_compare;
@@ -97,39 +105,25 @@ std::string recognitionOnePerson(cv::Mat &frame,
             }
         }
     }
-        return personName;
+    return personName;
 }
-void recognitor(cv::Mat &frame,
-                lite::onnxruntime::cv::faceid::MobileSEFocalFace *recognition,
-                const std::unordered_map<std::string, lite::types::FaceContent> &faceContents,
-                std::vector<lite::types::BoxfWithLandmarks> detectedBoxes)
+bool hasPersonName(const std::vector<TrackingBox> &detData, const std::string &name)
 {
-    std::cout << "cai" << std::endl;
-    for (const auto detectedBox : detectedBoxes)
+    for (const TrackingBox &box : detData)
     {
-        cv::Rect Rect(detectedBox.box.rect().x, detectedBox.box.rect().y, detectedBox.box.rect().width, detectedBox.box.rect().height);
-        cv::Mat croppedImage = frame(Rect);
-        lite::types::FaceContent face_to_compare;
-        recognition->detect(croppedImage, face_to_compare);
-        std::string personName = "Unknown";
-        if (face_to_compare.flag)
+        if (box.personName == name)
         {
-            for (const auto &faceContent : faceContents)
-            {
-                const lite::types::FaceContent &knownFace = faceContent.second;
-                if (knownFace.flag)
-                {
-                    float sim = lite::utils::math::cosine_similarity<float>(
-                        face_to_compare.embedding, knownFace.embedding);
-                    if (sim > 0.6)
-                    {
-                        personName = extractNameFromFile(faceContent.first);
-                        break;
-                    }
-                }
-            }
+            return true;
         }
-        draw(frame, detectedBox.box.rect(), personName);
+    }
+    return false;
+}
+void addToStruct(std::vector<TrackingBox> &detData, const TrackingBox &newBox)
+{
+    if (!hasPersonName(detData, newBox.personName))
+    {
+        std::cout << "Add new data to struct .........................................................................";
+        detData.push_back(newBox);
     }
 }
 
@@ -138,7 +132,7 @@ int main()
     // Load Model
     std::string scrfd_path = "../model/scrfd_500m_kps.onnx";
     std::string faceRecog_path = "../model/faceRecogByMobileFaceNet.onnx";
-    lite::onnxruntime::cv::face::detect::SCRFD scrfd(scrfd_path);
+    lite::onnxruntime::cv::face::detect::SCRFD scrfd(scrfd_path, 2);
     lite::onnxruntime::cv::faceid::MobileSEFocalFace recognition(faceRecog_path);
 
     // Load Known Face Data
@@ -166,39 +160,60 @@ int main()
     int frameCount = 0;
     cv::Mat currentFrame, prevFrame;
     std::vector<lite::types::BoxfWithLandmarks> detectedBoxes, detectedBoxesPrev;
+    std::vector<TrackingBox> detData;
+    std::vector<std::vector<double>> iouMatrix;
     // Face Detection and Recognition from Video
     auto startPr = high_resolution_clock::now();
 
     while (videoCapture.read(currentFrame))
     {
         auto start = high_resolution_clock::now();
-        if (frameCount == 0)
+        if (detData.size() == 0)
         {
             detectedBoxesPrev = detect(&scrfd, currentFrame);
-            recognitor(currentFrame, &recognition, faceContents, detectedBoxesPrev);
+            for (size_t i = 0; i < detectedBoxesPrev.size(); ++i)
+            {
+                std::string personName = recognitionOnePerson(currentFrame, &recognition, faceContents, detectedBoxesPrev[i].box.rect());
+                draw(currentFrame, detectedBoxesPrev[i].box.rect(), personName);
+                TrackingBox newTrackingBox;
+                newTrackingBox.box = detectedBoxesPrev[i].box.rect();
+                newTrackingBox.personName = personName;
+                newTrackingBox.frame = frameCount;
+                addToStruct(detData, newTrackingBox);
+            }
         }
         else
         {
             detectedBoxes = detect(&scrfd, currentFrame);
-            for (size_t i = 0; i < detectedBoxes.size(); ++i)
-            {
-                float iou = calc_iou(detectedBoxes[i].box.rect(), detectedBoxesPrev[i].box.rect());
+            iouMatrix.clear();
+            iouMatrix.resize(detectedBoxes.size(), std::vector<double>(detectedBoxesPrev.size(), 0));
+            int trkNum = detectedBoxes.size();
+            int detNum = detectedBoxesPrev.size();
 
-                if (iou > 0.1)
-                {   
-                    // std::string personName = recognitionOnePerson(currentFrame, &recognition, faceContents, detectedBoxesPrev[i].box.rect());
-                    draw(currentFrame, detectedBoxes[i].box.rect(), std::to_string(i));
-                }
-                else
+            if (detNum == trkNum)
+            {
+                for (size_t i = 0; i < detectedBoxes.size(); i++)
                 {
-                    detectedBoxesPrev = detectedBoxes;
-                    std::string personName = recognitionOnePerson(currentFrame, &recognition, faceContents, detectedBoxesPrev[i].box.rect());
-                    draw(currentFrame, detectedBoxes[i].box.rect(), personName);
+                    for (size_t j = 0; j < detectedBoxesPrev.size(); j++)
+                    {
+                        iouMatrix[i][j] = calculateIoU(detectedBoxes[i].box.rect(), detectedBoxesPrev[j].box.rect());
+
+                        if (iouMatrix[i][j] > 0.1)
+                        {
+                            std::cout << "IOUuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuu" << std::endl;
+                            // update new box for detData
+                            detData[j].box = detectedBoxes[i].box.rect();
+                            draw(currentFrame, detData[j].box, detData[j].personName);
+                        }
+                    }
                 }
             }
-        detectedBoxesPrev = detectedBoxes;
+            else if (detNum < trkNum){
+
+            }
+            detectedBoxesPrev = detectedBoxes;
         }
-     
+
         frameCount++;
 
         auto stop = high_resolution_clock::now();

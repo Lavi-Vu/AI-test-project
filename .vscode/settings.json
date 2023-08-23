@@ -72,6 +72,13 @@
         "forward_list": "cpp",
         "optional": "cpp",
         "valarray": "cpp",
-        "variant": "cpp"
+        "variant": "cpp",
+        "csignal": "cpp",
+        "any": "cpp",
+        "strstream": "cpp",
+        "bitset": "cpp",
+        "span": "cpp",
+        "__nullptr": "cpp",
+        "ranges": "cpp"
     }
 }

@@ -15,7 +15,7 @@
  * seems that the latest onnxruntime will no longer pre-defined the
  * USE_CUDA macro and just let the decision make by users
  * who really know the environments of running device.*/
-// #define USE_CUDA
+#define USE_CUDA
 #  ifdef USE_CUDA
 #include "onnxruntime/core/providers/cuda/cuda_provider_factory.h"
 #  endif

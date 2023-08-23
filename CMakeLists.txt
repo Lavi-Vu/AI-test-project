@@ -1,7 +1,10 @@
 cmake_minimum_required(VERSION 3.8.0)
 project(test)
-
+include(FetchContent)
 set(LITE_AI_DIR ${CMAKE_SOURCE_DIR})
+
+FetchContent_Declare(json URL https://github.com/nlohmann/json/releases/download/v3.11.2/json.tar.xz)
+FetchContent_MakeAvailable(json)
 
 find_package(OpenCV REQUIRED)
 find_package(OpenCV CONFIG REQUIRED)
@@ -22,15 +25,15 @@ if (CMAKE_COMPILER_IS_GNUCXX)
     message(STATUS "[Linux GCC Compiler Options]+:-std=c++11 -Wno-deprecated")
 endif ()
 
-# add_executable(test test.cpp)
+add_executable(test test.cpp)
 # add_executable(test2 test2.cpp)
 add_executable(test3 test3.cpp)
 add_executable(video video.cpp)
 add_executable(cURL cURL.cpp)
-# add_executable(testSORT testSORT.cpp)
+add_executable(testSORT testSORT.cpp)
 
-# target_link_libraries(test ${TOOLKIT_LIBS} ${OpenCV_LIBS})
-# target_link_libraries(test2 ${TOOLKIT_LIBS} ${OpenCV_LIBS})
+target_link_libraries(testSORT ${TOOLKIT_LIBS} ${OpenCV_LIBS} CURL::libcurl nlohmann_json::nlohmann_json)
+target_link_libraries(test ${TOOLKIT_LIBS} ${OpenCV_LIBS})
 target_link_libraries(test3 ${TOOLKIT_LIBS} ${OpenCV_LIBS})
 target_link_libraries(video ${TOOLKIT_LIBS} ${OpenCV_LIBS})
 target_link_libraries(cURL CURL::libcurl)

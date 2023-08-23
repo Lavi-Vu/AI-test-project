@@ -5,7 +5,7 @@
 /* #undef ENABLE_MNN */
 /* #undef ENABLE_NCNN */
 /* #undef ENABLE_TNN */
-/* #undef ENABLE_ONNXRUNTIME_CUDA */
+#define ENABLE_ONNXRUNTIME_CUDA
 #define ENABLE_OPENCV_VIDEOIO
 #define ENABLE_DEBUG_STRING
 /* #undef ENABLE_LITE_OPENMP */
