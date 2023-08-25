@@ -8,6 +8,7 @@
 #include <iterator>
 #include <curl/curl.h>
 #include <nlohmann/json.hpp>
+#include <ctime>
 using namespace std::chrono;
 
 typedef struct TrackingBox
@@ -16,7 +17,10 @@ typedef struct TrackingBox
 	std::string personName;
 	int id;
 	int frame;
+	char* time;
+
 } TrackingBox;
+
 class TrackingBoxManager
 {
 private:
@@ -52,6 +56,7 @@ public:
 			{
 				box.box = updatedBox.box;
 				box.frame = updatedBox.frame;
+				box.time = updatedBox.time;
 				return; // Exit the loop once updated
 			}
 		}
@@ -150,20 +155,28 @@ std::string recognitionOnePerson(cv::Mat &frame,
 	}
 	return personName;
 }
-void cURL()
+void cURL(std::string dataToPost, CURL *curl, std::string url)
 {
+	nlohmann::json jsonData;
+	jsonData["personName"] = dataToPost;
+	std::string jsonString = jsonData.dump();
+	curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
+	curl_easy_setopt(curl, CURLOPT_POST, 1L);
+	curl_easy_setopt(curl, CURLOPT_POSTFIELDS, jsonString.c_str()); // Set POST data directly
+	CURLcode res = curl_easy_perform(curl);
 }
 
 int main()
 {
-	// init server and cURL
+	
+	// init server and cURL 
 	CURL *curl = curl_easy_init();
 	if (!curl)
 	{
 		std::cerr << "cURL initialization failed." << std::endl;
 		return 1;
 	}
-	std::string url = "http://localhost:3000/";
+	std::string url = "http://localhost:3000/admin";
 
 	// Load Model
 	std::string scrfd_path = "../model/scrfd_500m_kps.onnx";
@@ -199,7 +212,8 @@ int main()
 	auto startPr = high_resolution_clock::now();
 	TrackingBoxManager manager;
 	while (videoCapture.read(currentFrame))
-	{
+	{	time_t now = time(0);
+
 		auto start = high_resolution_clock::now();
 		// track face using scrfd
 		if (detData.size() == 0)
@@ -211,10 +225,12 @@ int main()
 				std::string personName = recognitionOnePerson(currentFrame, &recognition, faceContents, detectedBoxes[i].box.rect());
 				if (personName != "Unknown")
 				{
+					char* dt = ctime(&now);
 					TrackingBox newTrackingBox;
 					newTrackingBox.box = detectedBoxes[i].box.rect();
 					newTrackingBox.personName = personName;
 					newTrackingBox.frame = frameCount;
+					newTrackingBox.time = dt;
 					manager.addTrackingBox(newTrackingBox, detData);
 					draw(currentFrame, detectedBoxes[i].box.rect(), std::to_string(detData[i].id));
 				}
@@ -258,13 +274,14 @@ int main()
 		}
 		else
 		{
-			if (trackBoxes.size() == 0){
+			if (trackBoxes.size() == 0)
+			{
 				std::cout << "0 Detected .........................." << std::endl;
 			}
 			for (size_t i = 0; i < trackBoxes.size(); ++i)
 			{
 				std::string personName = recognitionOnePerson(currentFrame, &recognition, faceContents, trackBoxes[i].box.rect());
-				if (personName != "Unknown")
+				if (personName != "Unknown"){
 					for (unsigned int j = 0; j < detectedBoxes.size(); j++)
 					{
 						iouMatrix[i][j] = calculateIoU(trackBoxes[i].box.rect(), detData[j].box);
@@ -276,10 +293,12 @@ int main()
 						}
 						else
 						{
+							char* dt = ctime(&now);
 							TrackingBox newTrackingBox;
 							newTrackingBox.box = trackBoxes[i].box.rect();
 							newTrackingBox.personName = personName;
 							newTrackingBox.frame = frameCount;
+							newTrackingBox.time = dt;
 							draw(currentFrame, trackBoxes[i].box.rect(), personName);
 							if (!manager.hasPersonName(newTrackingBox.personName, detData))
 							{
@@ -295,7 +314,11 @@ int main()
 							}
 						}
 					}
-			}
+				}
+				// else{
+				// 	draw(currentFrame, trackBoxes[i].box.rect(), personName);
+				// }	
+			}	
 		}
 
 		detectedBoxes = trackBoxes;
@@ -313,15 +336,18 @@ int main()
 		// 		curl_easy_setopt(curl, CURLOPT_POSTFIELDS, jsonString.c_str()); // Set POST data directly
 
 		// 		CURLcode res = curl_easy_perform(curl);
-		// 		sentPersonNames.insert(detBox.personName);
+			
 		// 	}
-		// 	// std::cout << "Person Name: " << detBox.personName << std::endl;
+			// std::cout << "Person Name: " << detBox.personName << std::endl;
 		// 	// std::cout << "Detected Box: ";
 		// 	// std::cout << "x: " << detBox.box.x << ", "
 		// 	// 		  << "y: " << detBox.box.y << ", "
 		// 	// 		  << "width: " << detBox.box.width << ", "
 		// 	// 		  << "height: " << detBox.box.height << std::endl;
 		// 	// std::cout << std::endl;
+		// }
+		// for (const auto &detBox: detData){
+		// 	
 		// }
 
 		auto stop = high_resolution_clock::now();
@@ -352,7 +378,10 @@ int main()
 				  << "height: " << detBox.box.height << std::endl;
 		std::cout << "Frame: " << detBox.frame << std::endl;
 		std::cout << "ID: " << detBox.id << std::endl;
+			std::cout << "time: " << detBox.time << std::endl;
 		std::cout << std::endl;
+		cURL(detBox.personName, curl, url);
+		
 	}
 	videoCapture.release();
 	// curl_easy_cleanup(curl);
